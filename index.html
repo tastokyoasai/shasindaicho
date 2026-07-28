@@ -10307,7 +10307,7 @@ table.ledger td.auto{color:#1a6bb5;font-weight:600}
 <!-- ===== 統合版：起動時モード選択オーバーレイ ===== -->
 <div id="modeOverlay" class="mode-overlay">
   <div class="mode-dialog">
-  <div class="mode-title">📷 写真台帳アプリ（統合版） <span style="font-size:13px;font-weight:700;color:#8a93a6;letter-spacing:.02em">ver.2.2</span></div>
+  <div class="mode-title">📷 写真台帳アプリ（統合版） <span style="font-size:13px;font-weight:700;color:#8a93a6;letter-spacing:.02em">ver.2.21</span></div>
     <div class="mode-sub">看板の方式を選んでください（あとでヘッダーの「🔀 モード変更」でいつでも切り替えられます）</div>
     <div class="mode-cards">
       <button class="mode-card" onclick="applyMode('digital')">
@@ -10338,7 +10338,7 @@ function applyMode(mode){
   var digital = (mode==='digital');
   var t=_moEl('appTitle');
   if(t) t.innerHTML = (digital?'🖥':'✍') + ' 写真台帳アプリ '
-    + '<span class="ver">'+(digital?'デジタル看板モード':'手書き看板モード')+'（統合版 ver.2.2・PC用）</span>';
+    + '<span class="ver">'+(digital?'デジタル看板モード':'手書き看板モード')+'（統合版 ver.2.21・PC用）</span>';
   var chip=_moEl('modeChip');
   if(chip){ chip.style.display=''; chip.textContent=(digital?'🖥 デジタル看板':'✍ 手書き看板');
     chip.className='mode-chip '+(digital?'chip-digital':'chip-writein'); }
@@ -10361,12 +10361,12 @@ function applyMode(mode){
 </script>
 
 <header>
-    <h1 id="appTitle">📷 写真台帳アプリ <span class="ver">ver.2.2（統合版・PC用）</span></h1>
+    <h1 id="appTitle">📷 写真台帳アプリ <span class="ver">ver.2.21（統合版・PC用）</span></h1>
   <div style="display:flex;gap:8px;align-items:center">
     <span id="modeChip" class="mode-chip" style="display:none"></span>
     <button class="btn btn-white" style="border:1px solid #ccc" onclick="openModePicker()">🔀 モード変更</button>
     <button class="btn btn-white" style="border:1px solid #ccc" id="btnSaveState" onclick="saveState()" disabled>💾 作業を保存</button>
-    <button class="btn btn-white" style="border:1px solid #ccc" onclick="document.getElementById('stateInput').click()">📂 作業を復元</button>
+    <button class="btn btn-white" style="border:1px solid #ccc" onclick="restoreWork()">📂 作業を復元</button>
     <input type="file" id="stateInput" class="file-input" accept=".json" onchange="loadState(event)">
     <button class="btn btn-orange" id="btnCSV" onclick="exportCSV()" disabled>📥 台帳CSV出力</button>
     <button class="btn btn-green" id="btnXLSX" onclick="exportXLSX()" disabled>📊 台帳Excel出力</button>
@@ -10718,6 +10718,21 @@ async function importFromDirHandle(dirHandle){
   if(!found.length){ alert('画像ファイルが見つかりませんでした。'); _d('progressWrap').classList.remove('show'); return; }
   _importDirHandle=dirHandle;   // コピー元として保持
   _srcDir=dirHandle;
+  // フォルダ内に保存済みの作業状態があれば、復元して続きから再開するか尋ねる
+  // （「作業を復元」からの呼び出しは既に _pendingState を設定済みなので尋ねない）
+  if(!_pendingState){
+    try{
+      const sfh=await dirHandle.getFileHandle(STATE_FILENAME);
+      const sf=await sfh.getFile();
+      const sdata=JSON.parse(await sf.text());
+      if(sdata && sdata.kind==='workstate' && Array.isArray(sdata.groups) && sdata.groups.length<=20000){
+        if(confirm('この写真フォルダに保存された作業状態が見つかりました。\n復元して続きから再開しますか？\n（「キャンセル」を選ぶと、最初から取り込み直します）')){
+          applyMastersFrom(sdata);
+          _pendingState=sdata;
+        }
+      }
+    }catch(e){ /* 作業状態ファイルが無ければ通常の取り込み */ }
+  }
   await ingest(found);           // file は持たせず handle のまま渡す
 }
 
@@ -12581,11 +12596,33 @@ function saveGroupEditor(){
 // ===== 作業状態の保存/復元（JSON。画像本体は含めない） =====
 // 保存内容：フォルダ名・写真ごとの所属グループ・各グループの看板情報。
 // 復元時は「同じフォルダを取り込んだ状態」に対して割り当て・手動編集を再現する。
-function saveState(){
-  if(!photos.length){alert('写真がありません。');return;}
+const STATE_FILENAME='写真台帳_作業状態.json';  // フォルダ保存時の固定ファイル名（毎回上書き）
+
+// フォルダへの読み書き権限を確認・要求（保存に必要）
+async function ensureRWPermission(handle){
+  try{
+    const opts={mode:'readwrite'};
+    if((await handle.queryPermission(opts))==='granted') return true;
+    if((await handle.requestPermission(opts))==='granted') return true;
+  }catch(e){}
+  return false;
+}
+// 保存用マスタの復元（loadState / restoreWork 共通）
+function applyMastersFrom(data){
+  if(data && data.masters && typeof data.masters==='object'){
+    ['prefix','taishou2','joukyou','shubetsu'].forEach(key=>{
+      if(Array.isArray(data.masters[key])){
+        KANBAN_MASTERS[key]=[...new Set(data.masters[key]
+          .filter(v=>typeof v==='string').map(v=>v.trim().slice(0,100)).filter(Boolean))].slice(0,200);
+      }
+    });
+  }
+}
+// 作業状態オブジェクトを組み立てる
+function buildStateData(){
   const folder = folderOf(photos[0].path) || '';
-  const data={
-    app:'写真台帳アプリ（統合版）', kind:'workstate', version:"2.2",
+  return {
+    app:'写真台帳アプリ（統合版）', kind:'workstate', version:"2.21",
     savedAt:new Date().toISOString(),
     folder,
     masters:{ prefix:[...KANBAN_MASTERS.prefix], taishou2:[...KANBAN_MASTERS.taishou2],
@@ -12605,18 +12642,43 @@ function saveState(){
       photoKeys: g.photoIds.map(id=>photoKey(photoById(id))).filter(Boolean)
     }))
   };
-  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
-  const a=document.createElement('a');
-  const d=new Date();
-  a.href=URL.createObjectURL(blob);
-  a.download='作業状態_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())+'.json';
-  a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+}
+async function saveState(){
+  if(!photos.length){alert('写真がありません。');return;}
+  const json=JSON.stringify(buildStateData(),null,2);
+  let savedToFolder=false;
+  // 取り込みをフォルダ選択（Chrome/Edge + https）で行っていれば、そのフォルダへ直接保存
+  if(_importDirHandle && typeof _importDirHandle.getFileHandle==='function'){
+    try{
+      if(await ensureRWPermission(_importDirHandle)){
+        const fh=await _importDirHandle.getFileHandle(STATE_FILENAME,{create:true});
+        const ws=await fh.createWritable();
+        await ws.write(json); await ws.close();
+        savedToFolder=true;
+      }
+    }catch(e){ console.warn('[saveState] フォルダ保存に失敗、ダウンロードに切替:',e); }
+  }
+  if(!savedToFolder){
+    // フォルダハンドルが無い環境（file://・複数ファイル選択・非対応ブラウザ）はダウンロード
+    const blob=new Blob([json],{type:'application/json'});
+    const a=document.createElement('a');
+    const d=new Date();
+    a.href=URL.createObjectURL(blob);
+    a.download='作業状態_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())+'.json';
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+  }
   // 保存したら、追加分は「既存」になる（次回の差分取り込みの基準になる）
   photos.forEach(p=>{ p.isNew=false; });
   state.groups.forEach(g=>{ g.isNew=false; });
   _showOnlyNew=false;
-  _d('stateInfo').style.display='none';
+  const si=_d('stateInfo');
+  if(savedToFolder){
+    si.textContent='取り込んだフォルダに作業状態を保存しました（'+STATE_FILENAME+'）。次回は「📂 作業を復元」でこのフォルダを選ぶと、続きから再開できます。';
+    si.style.display='';
+  }else{
+    si.style.display='none';
+  }
   refreshAll();
 }
 // 取り込み前に読み込んでおいた作業状態（差分取り込みに使う）
@@ -12630,15 +12692,7 @@ function loadState(ev){
     try{ data=JSON.parse(rd.result); }catch(e){ alert('JSONの読み込みに失敗しました'); return; }
     if(data.kind!=='workstate' || !Array.isArray(data.groups)){ alert('作業状態のJSONではないようです。'); return; }
     if(data.groups.length>20000){alert('グループ数が多すぎるため読み込めません。');return;}
-    // マスタ（選択肢）の復元。保存されていれば置き換える。
-    if(data.masters && typeof data.masters==='object'){
-      ['prefix','taishou2','joukyou','shubetsu'].forEach(key=>{
-        if(Array.isArray(data.masters[key])){
-          KANBAN_MASTERS[key]=[...new Set(data.masters[key]
-            .filter(v=>typeof v==='string').map(v=>v.trim().slice(0,100)).filter(Boolean))].slice(0,200);
-        }
-      });
-    }
+    applyMastersFrom(data);  // マスタ（選択肢）の復元。保存されていれば置き換える。
     if(photos.length){
       // すでに写真を取り込み済み → 従来どおりその場で適用
       applyState(data);
@@ -12656,6 +12710,37 @@ function loadState(ev){
 function clearPendingState(){
   _pendingState=null;
   _d('stateInfo').style.display='none';
+}
+// 「作業を復元」：Chrome/Edge（https）ではフォルダを選び、中の作業状態JSONを読み込んで
+// 写真を取り込み、保存時に未解析だった（＝新しく増えた）写真だけを解析する。
+// 非対応環境（file://・Safari等）ではJSONファイル選択の従来方式にフォールバックする。
+async function restoreWork(){
+  if(fsSupported()){
+    let dir=null;
+    try{ dir=await window.showDirectoryPicker({id:'srcdir', mode:'read'}); }
+    catch(e){ if(e && e.name==='AbortError') return; dir=null; }
+    if(dir){
+      let data=null;
+      try{
+        const fh=await dir.getFileHandle(STATE_FILENAME);
+        const f=await fh.getFile();
+        data=JSON.parse(await f.text());
+      }catch(e){ data=null; }
+      if(!data){
+        alert('このフォルダに作業状態ファイル（'+STATE_FILENAME+'）が見つかりませんでした。\n別の場所のJSONを使う場合は、続いて表示される画面から選んでください。');
+        _d('stateInput').click();
+        return;
+      }
+      if(data.kind!=='workstate' || !Array.isArray(data.groups)){ alert('作業状態のJSONではないようです。'); return; }
+      if(data.groups.length>20000){ alert('グループ数が多すぎるため読み込めません。'); return; }
+      applyMastersFrom(data);
+      _pendingState=data;
+      await importFromDirHandle(dir);   // 既存写真は復元、未解析の写真だけ解析
+      return;
+    }
+  }
+  // フォールバック：JSONファイルを選ぶ従来方式（この後フォルダ取り込みで差分解析）
+  _d('stateInput').click();
 }
 function applyState(data){
   const lookup=photoLookup();
