@@ -11716,14 +11716,22 @@ let _showOnlyNew=false;
 // 新規写真はここでは扱わない（buildGroupsFrom が末尾に足す）。
 function applyStateToPhotos(data){
   const lookup=photoLookup();
-  const groups=[];
+  const groups=[], used=new Set();
   (data.groups||[]).forEach(sg=>{
+    if(!sg || typeof sg!=='object') return;
     const qrId=lookup.resolve(sg.qrPhotoKey,sg.qrFile);
     const g={ id:newGid(), kanban:sg.kanban||null, source:sg.source||'manual',
-      qrPhotoId:qrId, photoIds:[] };
+      qrPhotoId:(qrId&&!used.has(qrId))?qrId:null, photoIds:[] };
+    if(g.qrPhotoId) used.add(g.qrPhotoId);
     if(Array.isArray(sg.photoKeys)){
-      sg.photoKeys.forEach((key,i)=>{ const id=lookup.resolve(key,(sg.files||[])[i]); if(id) g.photoIds.push(id); });
-    }else (sg.files||[]).forEach(fn=>{ const id=lookup.resolve(null,fn); if(id) g.photoIds.push(id); });
+      sg.photoKeys.forEach((key,i)=>{
+        const id=lookup.resolve(key,(Array.isArray(sg.files)?sg.files:[])[i]);
+        if(id&&!used.has(id)){ g.photoIds.push(id); used.add(id); }
+      });
+    }else (Array.isArray(sg.files)?sg.files:[]).forEach(fn=>{
+      const id=lookup.resolve(null,fn);
+      if(id&&!used.has(id)){ g.photoIds.push(id); used.add(id); }
+    });
     // 写真が1枚も残っていないグループは捨てる（フォルダから消された等）
     if(g.qrPhotoId || g.photoIds.length) groups.push(g);
   });
@@ -12655,14 +12663,21 @@ function applyState(data){
   let missing=0;
   const groups=[];
   data.groups.forEach(sg=>{
+    if(!sg || typeof sg!=='object'){ missing++; return; }
     const qrId=lookup.resolve(sg.qrPhotoKey,sg.qrFile);
     if((sg.qrPhotoKey||sg.qrFile) && !qrId) missing++;
     const g={ id:newGid(), kanban:sg.kanban||null, source:sg.source||'manual',
-      qrPhotoId:qrId, photoIds:[] };
+      qrPhotoId:(qrId&&!used.has(qrId))?qrId:null, photoIds:[] };
     if(g.qrPhotoId)used.add(g.qrPhotoId);
     if(Array.isArray(sg.photoKeys)){
-      sg.photoKeys.forEach((key,i)=>{ const id=lookup.resolve(key,(sg.files||[])[i]); if(id){g.photoIds.push(id);used.add(id);}else missing++; });
-    }else (sg.files||[]).forEach(fn=>{ const id=lookup.resolve(null,fn); if(id){g.photoIds.push(id);used.add(id);}else missing++; });
+      sg.photoKeys.forEach((key,i)=>{
+        const id=lookup.resolve(key,(Array.isArray(sg.files)?sg.files:[])[i]);
+        if(id&&!used.has(id)){g.photoIds.push(id);used.add(id);}else missing++;
+      });
+    }else (Array.isArray(sg.files)?sg.files:[]).forEach(fn=>{
+      const id=lookup.resolve(null,fn);
+      if(id&&!used.has(id)){g.photoIds.push(id);used.add(id);}else missing++;
+    });
     groups.push(g);
   });
   // JSONに無かった写真（フォルダに増えた等）は末尾の「未割当」グループへ
@@ -12722,9 +12737,10 @@ function strChk(v){
   if(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$/i.test(s))s='_'+s;
   return s;
 }
-// 相対フォルダは区切りを保持し、各階層名だけを個別にサニタイズする。
+// コピー元の相対フォルダは実在名をそのまま辿る。
+// 保存先用の strChk を適用すると、Windowsで有効な角括弧などを含む元フォルダを見失う。
 function sourceFolderParts(v){
-  return String(v==null?'':v).replace(/\\/g,'/').split('/').map(strChk).filter(Boolean);
+  return String(v==null?'':v).replace(/\\/g,'/').split('/').filter(Boolean);
 }
 // シーン名（マクロ SeaneName と同じ）
 function seaneName(t1,t2,jk,hk,shu){
