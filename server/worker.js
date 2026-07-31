@@ -12,21 +12,21 @@
  *   GEMINI_MODEL   … 省略可。使用するモデルを固定する場合に設定。
  *   ALLOW_ORIGIN   … 必須。自分のGitHub Pagesのオリジン（例: https://xxx.github.io）
  */
-
+ 
 const MAX_REQUEST_BYTES = 10 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024;
 const MAX_BASE64_CHARS = 8 * 1024 * 1024;
 const PREF2 = ["SA","SB","SC","SD","SE","SF","SG","SH","SI","SJ","SK","SL","SM","SN","SO","SP","SS","ST","SU","SW","SX","SY","SZ","NR"];
 const JOUKYOU = ["掘方完掘","掘方断面","出土状況","検出状況","設定状況","復旧状況","検出","完掘","断面","全景","近景"];
 const HOUKOU = ["北西","南西","北東","南東","北","南","東","西"];
-
+ 
 export default {
   async fetch(request, env) {
     const cors = corsHeaders(request, env);
     if (!configuredOrigins(env).length) {
       return json({ error: "server: ALLOW_ORIGIN 未設定" }, 500, cors);
     }
-
+ 
     // プリフライト(CORS)
     if (request.method === "OPTIONS") {
       if (!originAllowed(request, env)) {
@@ -43,7 +43,7 @@ export default {
     if (!env.GEMINI_API_KEY) {
       return json({ error: "server: GEMINI_API_KEY 未設定" }, 500, cors);
     }
-
+ 
     // Cloudflare Rate Limiting binding。通常の一括OCRは直列処理なので60回/分で十分余裕がある。
     if (env.OCR_RATE_LIMITER) {
       const origin = request.headers.get("Origin") || "no-origin";
@@ -53,12 +53,12 @@ export default {
         return json({ error: "rate limit" }, 429, { ...cors, "Retry-After": "60" });
       }
     }
-
+ 
     const contentType = (request.headers.get("Content-Type") || "").split(";")[0].trim().toLowerCase();
     if (contentType !== "application/json") {
       return json({ error: "content-type must be application/json" }, 415, cors);
     }
-
+ 
     let body;
     try {
       body = await readJsonLimited(request, MAX_REQUEST_BYTES);
@@ -68,7 +68,7 @@ export default {
       }
       return json({ error: "bad json" }, 400, cors);
     }
-
+ 
     const { image, mime = "image/jpeg", hints = {} } = body || {};
     if (typeof image !== "string" || !image) return json({ error: "no image" }, 400, cors);
     if (mime !== "image/jpeg") return json({ error: "mime must be image/jpeg" }, 415, cors);
@@ -78,22 +78,22 @@ export default {
     if (!/^[A-Za-z0-9+/]*={0,2}$/.test(image)) {
       return json({ error: "invalid base64 image" }, 400, cors);
     }
-
+ 
     // GEMINI_MODEL を設定すればそれを固定使用。未設定なら以下を先頭から試し、
     // 404(未提供)なら次の候補へ切り替える。①安いLite→②前世代Lite→③標準の順。
     const candidates = env.GEMINI_MODEL
       ? [env.GEMINI_MODEL]
-      : ["gemini-3.5-flash-lite", "gemini-2.5-flash-lite", "gemini-3.5-flash"];
-
+      : ["gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-2.5-flash-lite"];
+ 
     // 公開APIの入力をそのままプロンプトへ入れない。許可済み候補だけを採用する。
     const pref2 = allowedHints(hints.pref2, PREF2).join(" ");
     const joukyou = allowedHints(hints.joukyou, JOUKYOU).join("／");
     const houkou = allowedHints(hints.houkou, HOUKOU).join("／");
-
+ 
     const prompt =
 `あなたは発掘調査の写真に写る「看板（ホワイトボード）」を読み取る、日本語対応の高精度OCRです。
 看板の文字は手書きの場合があります。にじみ・かすれ・光の反射・傾きがあっても丁寧に読み取ってください。
-
+ 
 【看板のレイアウト】看板は次の枠で構成されています。各枠の「見出し文字」そのもの（例:「対象1」「対象2」「メモ」「方向」「撮影者」「日付」）は値ではないので抽出しないこと。枠の中に手書きで記入された内容だけを抽出すること。
 ・最上段の枠：遺跡名（＝kenmei）
 ・中央の枠：「対象1」（＝t1）と「対象2」（＝t2）。1つの枠に「対象1・対象2」が中黒(・)で並ぶ看板と、それぞれ独立した「対象1」枠・「対象2」枠になっている看板がある。いずれも枠の見出しラベルで対応づけること。値は遺構番号コードのことも、漢字などの自由記入のこともある（後述）。
@@ -103,9 +103,9 @@ export default {
 ・撮影者の枠：撮影者名（＝sha）
 ・右下：QRコード（読み取り不要）
 なお「状況（＝joukyou）」は独立した「状況」枠にあることも、対象1の近くに手書きされることもある（例:「遺構検出」「完掘」「断面」）。
-
+ 
 次の各項目を抽出し、指定のJSON形式で返してください。記入の無い項目・読み取れない項目は必ず空文字 "" にすること。推測や創作で埋めないこと。
-
+ 
 - t1（対象1）／t2（対象2）：看板中央の「対象1」「対象2」の枠に手書きされた対象。書かれているものを、次の(A)(B)いずれかの方針でそのまま読み取る。記入が無ければ ""（対象2の記入が無ければ t2 は ""）。推測で埋めない。
   (A) 遺構番号コード（「2文字の接頭辞＋番号」または「P＋番号」。例: SI12, SP01, P001）のとき：
       接頭辞は次のいずれかに正規化する（コードとして読むときはこれ以外の接頭辞にしない）: ${pref2} / P。
@@ -123,7 +123,7 @@ export default {
 - kenmei（件名／遺跡名）：最上段の枠の内容（市町村名＋遺跡名など）。無ければ "".
 - biko（メモ）：メモ枠の内容。無ければ "".
 - sha（撮影者）：撮影者の氏名。無ければ "".`;
-
+ 
     const payload = {
       contents: [
         {
@@ -152,7 +152,7 @@ export default {
         },
       },
     };
-
+ 
     let r = null, lastErr = "", usedModel = "";
     outer:
     for (const model of candidates) {
@@ -185,14 +185,14 @@ export default {
     if (!r || !r.ok) {
       return json({ error: "no usable model", detail: lastErr }, 502, cors);
     }
-
+ 
     let data;
     try {
       data = await r.json();
     } catch {
       return json({ error: "gemini: 応答がJSONでない" }, 502, cors);
     }
-
+ 
     let out = {};
     try {
       const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || "{}";
@@ -200,7 +200,7 @@ export default {
     } catch {
       out = {};
     }
-
+ 
     // 念のため型と余計な空白を整える
     const s = (v) => (typeof v === "string" ? v.trim() : "");
     // 遺構番号コード（英字1〜2＋数字）のときだけ大文字化＋空白除去。
@@ -220,33 +220,33 @@ export default {
       biko: s(out.biko),
       sha: s(out.sha),
     };
-
+ 
     // 実際に使ったモデル名を返す（開発者ツールの Network → レスポンスヘッダで確認できる）
     return json(result, 200, { ...cors, "X-OCR-Model": usedModel });
   },
 };
-
+ 
 function json(obj, status, cors) {
   return new Response(JSON.stringify(obj), {
     status,
     headers: { "Content-Type": "application/json", ...cors },
   });
 }
-
+ 
 function configuredOrigins(env) {
   return String(env.ALLOW_ORIGIN || "")
     .split(",")
     .map((v) => v.trim().replace(/\/$/, ""))
     .filter(Boolean);
 }
-
+ 
 function originAllowed(request, env) {
   const origin = request.headers.get("Origin");
   if (!origin) return true; // CLI等はレート制限で保護
   const allowed = configuredOrigins(env);
   return allowed.includes("*") || allowed.includes(origin.replace(/\/$/, ""));
 }
-
+ 
 function corsHeaders(request, env) {
   const origin = request.headers.get("Origin") || "";
   const allowed = configuredOrigins(env);
@@ -261,7 +261,7 @@ function corsHeaders(request, env) {
   if (allowValue !== "*") headers["Vary"] = "Origin";
   return headers;
 }
-
+ 
 async function readJsonLimited(request, maxBytes) {
   const declared = Number(request.headers.get("Content-Length") || 0);
   if (declared > maxBytes) throw tooLarge();
@@ -287,20 +287,21 @@ async function readJsonLimited(request, maxBytes) {
   }
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
 }
-
+ 
 function tooLarge() {
   const e = new Error("too large");
   e.code = "TOO_LARGE";
   return e;
 }
-
+ 
 function decodedBase64Bytes(value) {
   const padding = value.endsWith("==") ? 2 : (value.endsWith("=") ? 1 : 0);
   return Math.floor(value.length * 3 / 4) - padding;
 }
-
+ 
 function allowedHints(input, allowed) {
   if (!Array.isArray(input)) return allowed;
   const picked = input.filter((v) => typeof v === "string" && allowed.includes(v));
   return picked.length ? [...new Set(picked)] : allowed;
 }
+ 
