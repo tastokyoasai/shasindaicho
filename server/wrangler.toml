@@ -1,0 +1,26 @@
+# Worker名。ダッシュボードで作成済みの Worker 名に合わせています。
+# （wrangler deploy はこの名前の Worker を更新します。別名にすると新しい Worker が作られます）
+name = "shasindaicho"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# GEMINI_API_KEY はシークレットとして登録します（このファイルには書かない）：
+#   npx wrangler secret put GEMINI_API_KEY
+# ALLOW_ORIGIN も必須です。GitHub Pages のオリジンだけを登録します（末尾の / とパスは不要）：
+#   npx wrangler secret put ALLOW_ORIGIN
+#   入力例: https://あなたのユーザー名.github.io
+#
+# 任意設定（変えたいときだけ）：
+# [vars]
+# GEMINI_MODEL = "gemini-2.5-flash"
+
+# OCRはブラウザ側で直列実行するため、60回/分で通常利用には十分な余裕があります。
+# namespace_id が同じ別bindingを既に使っている場合は、未使用の正整数へ変更してください。
+# Rate Limiting bindingには Wrangler 4.36.0 以降が必要です。
+[[ratelimits]]
+name = "OCR_RATE_LIMITER"
+namespace_id = "2201"
+
+  [ratelimits.simple]
+  limit = 60
+  period = 60
