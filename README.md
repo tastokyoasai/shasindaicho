@@ -63,7 +63,7 @@ npx wrangler deploy
 ```
 
 - デプロイ後の Worker URL を、アプリの「中継URL設定」に登録します（`https://` 必須）。
-- 安くしたい／無料枠を広げたいときは、`GEMINI_MODEL`（Text変数）に `gemini-2.5-flash-lite` などを設定。未設定時は `gemini-3.5-flash-lite → gemini-2.5-flash-lite → gemini-3.5-flash` の順で使用。
+- 安くしたい／無料枠を広げたいときは、`GEMINI_MODEL`（Text変数）に `gemini-2.5-flash-lite` などを設定。未設定時は `gemini-3.5-flash → gemini-3.5-flash-lite → gemini-2.5-flash-lite` の順（過負荷503時は自動で次モデルへ切替＋再試行）。
 - 実際に使われているモデルは、OCR実行時のレスポンスヘッダ `X-OCR-Model` で確認できます。
 - 詳細は `docs/仕様書.md` の「高精度クラウドOCR」を参照。
 

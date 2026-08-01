@@ -10307,7 +10307,7 @@ table.ledger td.auto{color:#1a6bb5;font-weight:600}
 <!-- ===== 統合版：起動時モード選択オーバーレイ ===== -->
 <div id="modeOverlay" class="mode-overlay">
   <div class="mode-dialog">
-  <div class="mode-title">📷 写真台帳アプリ（統合版） <span style="font-size:13px;font-weight:700;color:#8a93a6;letter-spacing:.02em">ver.2.22</span></div>
+  <div class="mode-title">📷 写真台帳アプリ（統合版） <span style="font-size:13px;font-weight:700;color:#8a93a6;letter-spacing:.02em">ver.2.23</span></div>
     <div class="mode-sub">看板の方式を選んでください（あとでヘッダーの「🔀 モード変更」でいつでも切り替えられます）</div>
     <div class="mode-cards">
       <button class="mode-card" onclick="applyMode('digital')">
@@ -10338,7 +10338,7 @@ function applyMode(mode){
   var digital = (mode==='digital');
   var t=_moEl('appTitle');
   if(t) t.innerHTML = (digital?'🖥':'✍') + ' 写真台帳アプリ '
-    + '<span class="ver">'+(digital?'デジタル看板モード':'手書き看板モード')+'（統合版 ver.2.22・PC用）</span>';
+    + '<span class="ver">'+(digital?'デジタル看板モード':'手書き看板モード')+'（統合版 ver.2.23・PC用）</span>';
   var chip=_moEl('modeChip');
   if(chip){ chip.style.display=''; chip.textContent=(digital?'🖥 デジタル看板':'✍ 手書き看板');
     chip.className='mode-chip '+(digital?'chip-digital':'chip-writein'); }
@@ -10361,7 +10361,7 @@ function applyMode(mode){
 </script>
 
 <header>
-    <h1 id="appTitle">📷 写真台帳アプリ <span class="ver">ver.2.22（統合版・PC用）</span></h1>
+    <h1 id="appTitle">📷 写真台帳アプリ <span class="ver">ver.2.23（統合版・PC用）</span></h1>
   <div style="display:flex;gap:8px;align-items:center">
     <span id="modeChip" class="mode-chip" style="display:none"></span>
     <button class="btn btn-white" style="border:1px solid #ccc" onclick="openModePicker()">🔀 モード変更</button>
@@ -12622,7 +12622,7 @@ function applyMastersFrom(data){
 function buildStateData(){
   const folder = folderOf(photos[0].path) || '';
   return {
-    app:'写真台帳アプリ（統合版）', kind:'workstate', version:"2.22",
+    app:'写真台帳アプリ（統合版）', kind:'workstate', version:"2.23",
     savedAt:new Date().toISOString(),
     folder,
     masters:{ prefix:[...KANBAN_MASTERS.prefix], taishou2:[...KANBAN_MASTERS.taishou2],
